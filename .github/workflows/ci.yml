@@ -1,0 +1,25 @@
+name: Interactive UI CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-interactive-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check entrypoints
+        run: |
+          test -f index.html
+          test -f styles.css
+          test -f script.js
+      - name: Check linked assets
+        run: |
+          grep -q 'href="./styles.css"' index.html
+          grep -q 'src="./script.js"' index.html
+          grep -q 'data-testid="hero-section"' index.html
