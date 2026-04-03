@@ -1,0 +1,83 @@
+name: Implementation Agent
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  agent:
+    if: contains(github.event.comment.body, '@glm')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run GLM-4 implementation
+        id: implement
+        continue-on-error: true
+        env:
+          BIGMODEL_API_KEY: ${{ secrets.BIGMODEL_API_KEY }}
+          BIGMODEL_BASE_URL: https://open.bigmodel.cn/api/paas/v4/chat/completions
+          BIGMODEL_MODEL: glm-4-plus
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/implement-with-glm.mjs
+      - name: Commit implementation
+        if: steps.implement.outcome == 'success' && steps.implement.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "feat: implement issue #${{ github.event.issue.number }} with GLM-4"
+          git push origin HEAD:${{ github.event.repository.default_branch }}
+      - name: Post completion note
+        if: steps.implement.outcome == 'success' && steps.implement.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `GLM-4 committed the requested implementation directly to the default branch.
+
+Summary: ${process.env.GLM_SUMMARY || "Completed implementation."}`
+            })
+        env:
+          GLM_SUMMARY: ${{ steps.implement.outputs.summary }}
+      - name: Post no-change note
+        if: steps.implement.outcome == 'success' && steps.implement.outputs.changed != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `GLM-4 reviewed the issue but did not produce file changes.
+
+Summary: ${process.env.GLM_SUMMARY || "No repository updates were necessary."}`
+            })
+        env:
+          GLM_SUMMARY: ${{ steps.implement.outputs.summary }}
+      - name: Post failure note
+        if: steps.implement.outcome != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `GLM-4 could not complete the implementation run.
+
+Error: ${process.env.GLM_ERROR || "Unknown error"}`
+            })
+        env:
+          GLM_ERROR: ${{ steps.implement.outputs.error }}
